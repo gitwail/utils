@@ -1,0 +1,51 @@
+---
+title: "Troubleshooting: Remote jobs timing out after yggdrasil update"
+product: "Red Hat Satellite"
+version: "6.19"
+guide: "managing_hosts"
+guide_title: "Managing hosts"
+chapter_number: "A"
+section_type: "appendix"
+source_url: "https://docs.redhat.com/en/documentation/red_hat_satellite/6.19/html-single/managing_hosts/index#troubleshooting-remote-jobs-timing-out-after-yggdrasil-update"
+---
+# Appendix A. Troubleshooting: Remote jobs timing out after yggdrasil update
+
+On hosts that have weak dependencies disabled and are configured to use the `yggdrasil` pull client, remote jobs can start failing due to timeouts after the `yggdrasil` package has been updated to version 0.4.z or later. You can manually install the `foreman_ygg_migration` package to address the problem.
+
+The pull-based transport configuration relies on the Yggdrasil service and differs based on the version of the `yggdrasil` package that is installed on the host. For pull-based remote execution mode to work correctly after `yggdrasil` version 0.4.z is installed on the host, the Yggdrasil client configuration must be updated. Installing the `foreman_ygg_migration` package on the host ensures that Satellite applies the required changes to Yggdrasil configuration.
+
+On hosts with weak dependencies enabled, Satellite automatically installs the `foreman_ygg_migration` package. No further steps are required.
+
+On hosts with weak dependencies disabled, you must install the `foreman_ygg_migration` package manually.
+
+**Procedure**
+
+1. Determine which version of the `yggdrasil` package is installed on the host:
+
+   ```
+   $ rpm --query yggdrasil
+   ```
+2. If your host has `yggdrasil` version 0.4.z or later installed, the `yggdrasil` and `com.redhat.Yggdrasil1.Worker1.foreman` services are expected to be running. Check the status of these services:
+
+   ```
+   # systemctl status yggdrasil com.redhat.Yggdrasil1.Worker1.foreman
+   ```
+
+   If the above services are not running, it means that Yggdrasil might not be configured correctly.
+3. Install the `foreman_ygg_migration` package manually:
+
+   ```
+   # dnf install foreman_ygg_migration
+   ```
+
+   Installing `foreman_ygg_migration` ensures that Satellite applies the required Yggdrasil configuration changes and enables remote execution in pull mode to work as expected.
+
+**Verification**
+
+1. Check the status of the Yggdrasil services again:
+
+   ```
+   # systemctl status yggdrasil com.redhat.Yggdrasil1.Worker1.foreman
+   ```
+
+   These services should now be running.

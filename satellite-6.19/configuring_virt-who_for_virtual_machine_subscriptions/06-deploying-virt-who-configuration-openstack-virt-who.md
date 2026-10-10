@@ -1,0 +1,166 @@
+---
+title: "Configuring virt-who for Red Hat OpenStack Services on OpenShift"
+product: "Red Hat Satellite"
+version: "6.19"
+guide: "configuring_virt-who_for_virtual_machine_subscriptions"
+guide_title: "Configuring virt-who for virtual machine subscriptions"
+chapter_number: "6"
+section_type: "chapter"
+source_url: "https://docs.redhat.com/en/documentation/red_hat_satellite/6.19/html-single/configuring_virt-who_for_virtual_machine_subscriptions/index#deploying-virt-who-configuration_openstack-virt-who"
+---
+# Chapter 6. Configuring virt-who for Red Hat OpenStack Services on OpenShift
+
+Configure virt-who for Red Hat OpenStack Services on OpenShift to enable Satellite to discover and manage subscriptions for your virtual machines. This ensures proper subscription entitlements are applied based on the relationship between virtual machines and their physical hosts.
+
+## 6.1. Creating a virt-who configuration by using the Satellite web UI
+
+You can create a virt-who configuration for Red Hat OpenStack Services on OpenShift by using the Satellite web UI.
+
+The virt-who configuration creates a `virt_who_reporter_1` user with the `Virt-who Reporter` role, which provides minimal permissions for virt-who reporting to Satellite Server. This user cannot be manually configured or used to log in to Satellite Server.
+
+Local configuration values are stored in the `/etc/virt-who.d/conf_name.conf` file. These values apply only to the hypervisor.
+
+Global configuration values are stored in the `/etc/sysconfig/virt-who` file These values, which include `Interval`, `Enable debugging output`, `HTTP Proxy`, and `Ignore Proxy`, apply to all virt-who configurations on the same server. Redeploying a virt-who configuration on the same server overwrites these values.
+
+**Prerequisites**
+
+- You have imported a subscription manifest that includes a host-based subscription into Satellite Server. For more information, see [Section 1.2, “Checking for subscriptions that require virt-who”](https://docs.redhat.com/en/documentation/red_hat_satellite/6.19/html-single/configuring_virt-who_for_virtual_machine_subscriptions/index#checking-for-subscriptions-that-require-virt-who_virt-who-vm-subs "1.2. Checking for subscriptions that require virt-who").
+- You have created a virt-who user with read-only access and a non-expiring password on the hypervisor.
+
+**Procedure**
+
+1. In the Satellite web UI, navigate to **Infrastructure** > **Virt-who Configurations**.
+2. Click **Create Config**.
+3. Complete the following fields:
+
+   - **Name**: Configuration name.
+   - **Hypervisor Type**: Select **libvirt**.
+   - **Interval**: Virtual machine information reporting interval.
+   - **Satellite Server FQDN**.
+   - **Hypervisor ID**: Select **Hostname** or **UUID**.
+4. Optional: **Filtering**. Select one of the following options for querying hypervisors:
+
+   - **Unlimited** (default): All hypervisors are queried.
+   - **Whitelist**: Specific hypervisors are included.
+
+     - **Filter hosts**: Comma-separated list of included hypervisors.
+   - **Blacklist**: Specific hypervisors are excluded.
+
+     - **Exclude hosts**: Comma-separated list of excluded hypervisors.
+
+   In the Filtering fields, specify the host name or UUID according to the hypervisor ID you selected. Follow these guidelines for host names:
+
+   - You can use wildcards, regular expressions, and special characters in the host name.
+   - If you use regular expressions, you must escape the backslashes.
+   - If you use special characters, you must enclose the host name in quotation marks.
+
+   For more information, see [Using the "Filter Host Parents" and "Exclude Host Parents" Attributes with VMware Clusters](https://access.redhat.com/solutions/5696481) in the *Red Hat Knowledgebase*.
+5. You can configure the following logging and proxy options:
+
+   - **Enable debugging output**: Enables debug logging for virt-who.
+   - **HTTP Proxy**. Example: `http://proxy.example.com:3128`.
+
+     To use no proxy, leave this field blank; this has the same result as entering `*` in the **Ignore Proxy** field.
+   - **Ignore Proxy**: Comma-separated list of host names, IP addresses, or domains to bypass existing proxy settings.
+6. Click **Submit**.
+
+## 6.2. Creating a virt-who configuration by using Hammer CLI
+
+You can create a virt-who configuration for Red Hat OpenStack Services on OpenShift by using Hammer CLI.
+
+The virt-who configuration creates a `virt_who_reporter_1` user with the `Virt-who Reporter` role, which provides minimal permissions for virt-who reporting to Satellite Server. This user cannot be manually configured or used to log in to Satellite Server.
+
+Local configuration values are stored in the `/etc/virt-who.d/conf_name.conf` file. These values apply only to the hypervisor.
+
+Global configuration values are stored in the `/etc/sysconfig/virt-who` file These values, which include `Interval`, `Enable debugging output`, `HTTP Proxy`, and `Ignore Proxy`, apply to all virt-who configurations on the same server. Redeploying a virt-who configuration on the same server overwrites these values.
+
+**Prerequisites**
+
+- You have imported a subscription manifest that includes a host-based subscription into Satellite Server. For more information, see [Section 1.2, “Checking for subscriptions that require virt-who”](https://docs.redhat.com/en/documentation/red_hat_satellite/6.19/html-single/configuring_virt-who_for_virtual_machine_subscriptions/index#checking-for-subscriptions-that-require-virt-who_virt-who-vm-subs "1.2. Checking for subscriptions that require virt-who").
+- You have created a virt-who user with read-only access and a non-expiring password on the hypervisor.
+
+**Procedure**
+
+- On Satellite Server, enter the `hammer virt-who-config create` command:
+
+  ```
+  $ hammer virt-who-config create \
+  --name My_virt-who_Configuration \
+  --organizations "My_Organization" \
+  --interval 720 \
+  --filtering-mode none \
+  --hypervisor-id hostname \
+  --hypervisor-type libvirt \
+  --hypervisor-server qemu:///system \
+  --hypervisor-username virt_who_user \
+  --satellite-url satellite.example.com
+  ```
+
+In this command, use the following options:
+
+- In `--filtering-mode`, specify `none` for no filtering of hypervisors for virt-who queries. Specify `whitelist` or `blacklist` to include or exclude hypervisors for virt-who queries.
+- In `--hypervisor-id`, specify `hostname`, `uuid`, or `hwuuid` for the hypervisor ID format.
+
+  - You can use `uuid` to avoid duplication if you rename a hypervisor.
+  - You can use `hwuuid` for configurations that apply to a virtualization manager instead of an individual hypervisor.
+
+    > **Note**
+    >
+    > You cannot change `hwuuid` to another option after virt-who starts running because this might cause duplicate entries in Subscription Manager.
+- In `--hypervisor-server`, specify the FQDN or IP address of the hypervisor.
+- In `--hypervisor-username`, specify the name of the virt-who user you created on the hypervisor.
+- Optionally, in the `--proxy` option, specify the proxy address and port, for example, `--proxy '\http://proxy.example.com:3128'`.
+- Optionally, in the `--interval` option, specify the virtual machine information reporting interval in minutes.
+
+**Example 6.1. Red Hat OpenStack Services on OpenShift virt-who configuration**
+
+```
+type=libvirt
+hypervisor_id=hostname
+owner=Default_Organization
+env=Library
+server=qemu:///system
+username=virt_who_user
+encrypted_password=$cr_password
+rhsm_hostname=satellite.example.com
+rhsm_username=virt_who_reporter_1
+rhsm_encrypted_password=$user_password
+rhsm_prefix=/rhsm
+```
+
+## 6.3. Deploying a virt-who configuration on a hypervisor
+
+You deploy a virt-who configuration on a hypervisor to enable virtual machine subscription tracking. You download a virt-who configuration script from the Satellite web UI and then you run the script on the hypervisor.
+
+Global configuration values apply to all virt-who configurations on this server and are overwritten if you deploy a new virt-who configuration.
+
+**Prerequisites**
+
+- You have registered the hypervisor to Satellite Server.
+
+**Procedure**
+
+1. In the Satellite web UI, navigate to **Infrastructure** > **Virt-who Configurations**.
+2. Click a virt-who configuration.
+3. Click the **Deploy** tab.
+4. Under **Configuration script**, click **Download the script**.
+5. Copy the script from Satellite Server to the hypervisor:
+
+   ```
+   $ scp deploy_virt_who_config_1.sh root@hypervisor.example.com:
+   ```
+6. Log in to the hypervisor and make the script executable:
+
+   ```
+   $ chmod +x deploy_virt_who_config_1.sh
+   ```
+7. Run the script:
+
+   ```
+   $ sh deploy_virt_who_config_1.sh
+   ```
+8. After the deployment is complete, delete the script:
+
+   ```
+   $ rm deploy_virt_who_config_1.sh
+   ```
