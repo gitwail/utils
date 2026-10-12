@@ -55,6 +55,9 @@ uv run scripts/confluence_to_md.py --space LINUX --out confluence/LINUX         
 uv run scripts/confluence_to_md.py --page-id 123456 --out confluence/my-tree        # one page and its children
 ```
 
+Instead of `export`, you can fill in the gitignored `.env` and run with `uv run --env-file .env ...`.
+See [CONFLUENCE_ENV.md](CONFLUENCE_ENV.md) for where to get each variable.
+
 Options: `--attachments` downloads embedded images to `_attachments/`, `--ca-bundle corp-ca.pem`
 uses an internal TLS certificate authority, `--force` re-exports every page and `--delay` sets the
 seconds between requests.
