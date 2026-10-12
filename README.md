@@ -53,7 +53,14 @@ export CONFLUENCE_PAT=...              # or CONFLUENCE_USER + CONFLUENCE_PASSWOR
 uv run scripts/confluence_to_md.py --space LINUX --out confluence/LINUX --limit 5   # smoke test
 uv run scripts/confluence_to_md.py --space LINUX --out confluence/LINUX             # full space
 uv run scripts/confluence_to_md.py --page-id 123456 --out confluence/my-tree        # one page and its children
+uv run scripts/confluence_to_md.py --urls pages.txt --out confluence/selected       # pages listed in a file
 ```
+
+`--urls` takes a file with one page per line; blank lines and `#` comments are ignored. Any of these
+forms work: `.../pages/viewpage.action?pageId=123`, `.../display/SPACE/Page+Title`,
+`.../spaces/SPACE/pages/123/...`, tiny links (`.../x/AbCd`) or a bare page ID. Add `--children` to
+also export every page under each listed page. If a URL can't be resolved it is reported and
+skipped, the script exits with an error, and no files are deleted on that run.
 
 Instead of `export`, you can fill in the `.env` template (run `git update-index --skip-worktree .env`
 first so your token is never committed) and run with `uv run --env-file .env ...`.

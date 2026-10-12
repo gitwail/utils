@@ -1,0 +1,13 @@
+# Confluence pages to export, one per line. Blank lines and lines starting with # are ignored.
+#
+#   uv run --env-file .env scripts/confluence_to_md.py --urls pages.txt --out confluence/selected
+#
+# Add --children to also export every page under each listed page.
+# Accepted forms (copy the URL from your browser's address bar):
+#
+#   https://confluence.example.com/pages/viewpage.action?pageId=123456
+#   https://confluence.example.com/display/SPACE/Page+Title
+#   https://confluence.example.com/spaces/SPACE/pages/123456/Page+Title
+#   https://confluence.example.com/x/AbCd
+#   123456
+

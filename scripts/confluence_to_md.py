@@ -16,6 +16,7 @@ Auth (environment variables, never written to disk):
 Usage:
     uv run scripts/confluence_to_md.py --space LINUX --out confluence/LINUX
     uv run scripts/confluence_to_md.py --page-id 123456 --out confluence/some-tree
+    uv run scripts/confluence_to_md.py --urls pages.txt --out confluence/selected [--children]
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ import sys
 import time
 import unicodedata
 from pathlib import Path
-from urllib.parse import quote, unquote, urljoin, urlparse
+from urllib.parse import parse_qs, quote, unquote, unquote_plus, urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup, NavigableString, Tag
@@ -97,8 +98,37 @@ class Confluence:
         return self.paged("/rest/api/content", {"spaceKey": space, "type": "page", "expand": PAGE_EXPAND})
 
     def page_tree(self, page_id: str):
-        yield self.get(f"/rest/api/content/{page_id}", {"expand": PAGE_EXPAND})
+        yield self.page(page_id)
         yield from self.paged(f"/rest/api/content/{page_id}/descendant/page", {"expand": PAGE_EXPAND})
+
+    def page(self, page_id: str):
+        return self.get(f"/rest/api/content/{page_id}", {"expand": PAGE_EXPAND})
+
+    def resolve(self, url: str, follow: bool = True) -> str:
+        """Page ID for a page URL (viewpage, /pages/<id>, /display/SPACE/Title, /x/ tiny link) or bare ID."""
+        if url.isdigit():
+            return url
+        parsed = urlparse(url)
+        qs = parse_qs(parsed.query)
+        if "pageId" in qs:
+            return qs["pageId"][0]
+        if m := re.search(r"/pages/(\d+)", parsed.path):
+            return m.group(1)
+        space = title = None
+        if "spaceKey" in qs and "title" in qs:
+            space, title = qs["spaceKey"][0], qs["title"][0]
+        elif m := re.search(r"/display/([^/]+)/([^/]+)/?$", parsed.path):
+            space, title = unquote(m.group(1)), unquote_plus(m.group(2))
+        if space and title:
+            results = self.get("/rest/api/content", {"spaceKey": space, "title": title, "type": "page"})["results"]
+            if not results:
+                raise ValueError(f"no page titled {title!r} in space {space}")
+            return results[0]["id"]
+        if follow and "/x/" in parsed.path:  # tiny link: the redirect target holds the page ID
+            resp = self.s.get(url, allow_redirects=False, timeout=60)
+            if location := resp.headers.get("Location"):
+                return self.resolve(urljoin(url, location), follow=False)
+        raise ValueError("not a Confluence page URL")
 
     def body(self, page_id: str) -> str:
         data = self.get(f"/rest/api/content/{page_id}", {"expand": "body.export_view"})
@@ -261,11 +291,31 @@ def download_attachments(api: Confluence, html: str, page_id: str, out: Path) ->
     return mapping
 
 
+def read_urls(path: Path) -> list[str]:
+    lines = (line.strip() for line in path.read_text(encoding="utf-8").splitlines())
+    return [line for line in lines if line and not line.startswith("#")]
+
+
+def url_pages(api: Confluence, urls: list[str], children: bool, failed: list[str]):
+    for url in urls:
+        try:
+            pid = api.resolve(url)
+            if children:
+                yield from api.page_tree(pid)
+            else:
+                yield api.page(pid)
+        except (ValueError, requests.HTTPError) as exc:
+            print(f"  skipping {url}: {exc}", file=sys.stderr)
+            failed.append(url)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     scope = ap.add_mutually_exclusive_group(required=True)
     scope.add_argument("--space", help="space key, e.g. LINUX")
     scope.add_argument("--page-id", help="export this page and all its descendants")
+    scope.add_argument("--urls", type=Path, help="file with one page URL or page ID per line (# comments ok)")
+    ap.add_argument("--children", action="store_true", help="with --urls, also export each page's descendants")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--url", default=os.environ.get("CONFLUENCE_URL"), help="base URL (or CONFLUENCE_URL)")
     ap.add_argument("--ca-bundle", help="CA bundle for an internal TLS certificate")
@@ -276,18 +326,32 @@ def main() -> None:
     args = ap.parse_args()
     if not args.url:
         sys.exit("set CONFLUENCE_URL or pass --url")
+    if args.children and not args.urls:
+        ap.error("--children only applies to --urls")
 
     api = Confluence(args.url, args.delay, args.ca_bundle)
     args.out.mkdir(parents=True, exist_ok=True)
     state_path = args.out / "state.json"
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
 
-    pages = api.space_pages(args.space) if args.space else api.page_tree(args.page_id)
+    failed: list[str] = []
+    if args.space:
+        pages, title = api.space_pages(args.space), args.space
+    elif args.page_id:
+        pages, title = api.page_tree(args.page_id), f"Page tree {args.page_id}"
+    else:
+        if not args.urls.is_file():
+            sys.exit(f"{args.urls}: file not found")
+        if not (urls := read_urls(args.urls)):
+            sys.exit(f"{args.urls}: no URLs (add one page URL or ID per line)")
+        pages, title = url_pages(api, urls, args.children, failed), f"Pages from {args.urls.name}"
     seen, tree, exported, skipped = {}, [], 0, 0
-    for i, page in enumerate(pages):
-        if args.limit and i >= args.limit:
-            break
+    for page in pages:
         pid = page["id"]
+        if pid in seen:  # overlapping URLs / trees
+            continue
+        if args.limit and len(seen) >= args.limit:
+            break
         version = page["version"]["number"]
         ancestors = [a["title"] for a in page.get("ancestors", [])]
         fname = f"{pid}-{slugify(page['title'])}.md"
@@ -321,7 +385,7 @@ def main() -> None:
         exported += 1
 
     removed = 0
-    if not args.limit:
+    if not args.limit and not failed:
         for pid, prev in state.items():
             if pid not in seen:
                 (args.out / prev["file"]).unlink(missing_ok=True)
@@ -333,10 +397,12 @@ def main() -> None:
     state_path.write_text(json.dumps(state, indent=1, sort_keys=True), encoding="utf-8")
 
     tree.sort(key=lambda t: [x.lower() for x in t[0] + [t[1]]])
-    lines = [f"# {args.space or f'Page tree {args.page_id}'}", "", f"Exported from {api.base}", ""]
+    lines = [f"# {title}", "", f"Exported from {api.base}", ""]
     lines += [f"{'  ' * len(anc)}- [{title}]({fname})" for anc, title, fname in tree]
     (args.out / "README.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"done: {exported} exported, {skipped} unchanged, {removed} removed -> {args.out}")
+    if failed:
+        sys.exit(f"{len(failed)} URL(s) could not be exported (deletions skipped): " + ", ".join(failed))
 
 
 if __name__ == "__main__":
