@@ -1,7 +1,7 @@
 # Confluence exporter: environment variables
 
-`scripts/confluence_to_md.py` reads its settings from environment variables. Copy them into the
-gitignored `.env` file in the repo root and run:
+`scripts/confluence_to_md.py` reads its settings from environment variables. Fill them in in the
+`.env` file in the repo root (see [Keep `.env` private](#keep-env-private) first) and run:
 
 ```bash
 uv run --env-file .env scripts/confluence_to_md.py --space LINUX --out confluence/LINUX
@@ -70,5 +70,13 @@ The script's `--ca-bundle` flag does the same thing.
 
 ## Keep `.env` private
 
-`.env` holds your token or password. It is gitignored and readable only by your user
-(`chmod 600 .env`). Never commit it or paste its contents anywhere.
+`.env` is committed to the repo as an empty template, so git sees your token as a change once you
+fill it in. Before adding any values, tell git on your machine to ignore your local edits:
+
+```bash
+git update-index --skip-worktree .env
+chmod 600 .env    # readable only by your user
+```
+
+Never commit a filled-in `.env` or paste its contents anywhere. To undo the skip later, run
+`git update-index --no-skip-worktree .env`.
